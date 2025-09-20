@@ -2,8 +2,10 @@ from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Annotated
 import uuid
+from datetime import datetime, timezone
 from dotenv import load_dotenv
-from supabase import AsyncClient, acreate_client
+from supabase import AsyncClient
+from pydantic import TypeAdapter
 
 import schemas
 import auth
@@ -32,7 +34,6 @@ async def read_prompts(
     user_id : Annotated[uuid.UUID, Depends(auth.get_current_user_id)]
 ):
     prompts = await supabase.table("prompts").select("*").eq("user_id", user_id).execute()
-    print(prompts.data)
     return prompts.data or []
 
 @app.post("/prompts", response_model=schemas.PromptPublic, status_code=201)
@@ -72,8 +73,6 @@ async def fork_prompt(
     user_supabase: Annotated[AsyncClient, Depends(auth.get_supabase_client_with_auth)],
     user_id: Annotated[uuid.UUID, Depends(auth.get_current_user_id)]
 ):  
-    print(fork_data)
-    print(prompt_slug)
     forked_prompt = await user_supabase.table("prompts").select("*").eq("user_id", user_id).eq("title_slug", prompt_slug).single().execute()
     if not forked_prompt:
         raise HTTPException(status_code=404, detail="Original prompt not found")
@@ -97,12 +96,25 @@ async def delete_prompt(
     return result
 
 
-@app.put("/prompts/{prompt_slug}", response_model=schemas.PromptPublic)
+@app.put("/prompts/{prompt_slug}", response_model=schemas.PromptCreateResponse)
 async def update_prompt(
     prompt_slug: str,
     prompt: schemas.PromptCreate,
     user_supabase: Annotated[AsyncClient, Depends(auth.get_supabase_client_with_auth)],
     user_id: Annotated[uuid.UUID, Depends(auth.get_current_user_id)]
-):
-    result = await user_supabase.table("prompts").update(prompt.model_dump()).eq("user_id", user_id).eq("title_slug", prompt_slug).execute()
+):  
+    new_prompt = {
+        "title": prompt.title,
+        "title_slug": slugify(prompt.title),
+        "description": prompt.description,
+        "visibility": prompt.visibility,
+        "messages": [message.model_dump() for message in prompt.messages],
+        "user_id": user_id,
+        "updated_at": "now()"
+    }
+    result = await user_supabase.table("prompts") \
+        .update(new_prompt) \
+        .eq("user_id", user_id) \
+        .eq("title_slug", prompt_slug) \
+        .execute()
     return result.data[0]
