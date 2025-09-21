@@ -86,10 +86,10 @@ async def fork_prompt(
         "id": uuid.uuid4(),
         "title": fork_data.new_title,
         "title_slug": slugify(fork_data.new_title),
-        "description": fork_data.new_description if fork_data.new_description else forked_prompt.data[0]["description"],
+        "description": fork_data.new_description if fork_data.new_description else forked_prompt.data["description"],
         "visibility": schemas.Visibility.private,
         "messages": new_messages,
-        "forked_from_id": forked_prompt.data[0]["id"],
+        "forked_from_id": forked_prompt.data["id"],
         "created_at": "now()",
         "updated_at": "now()"
     }
