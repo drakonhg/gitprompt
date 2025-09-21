@@ -73,15 +73,25 @@ async def fork_prompt(
     user_supabase: Annotated[AsyncClient, Depends(auth.get_supabase_client_with_auth)],
     user_id: Annotated[uuid.UUID, Depends(auth.get_current_user_id)]
 ):  
+    print(fork_data)
     forked_prompt = await user_supabase.table("prompts").select("*").eq("user_id", user_id).eq("title_slug", prompt_slug).single().execute()
     if not forked_prompt:
         raise HTTPException(status_code=404, detail="Original prompt not found")
+
+    if fork_data.new_messages:
+        new_messages = [message.model_dump() for message in fork_data.new_messages]
+    else:
+        new_messages = [message.model_dump() for message in forked_prompt.data[0]["messages"]]
+    
     new_prompt = {
         "title": fork_data.new_title,
         "title_slug": slugify(fork_data.new_title),
-        "visibility": 'private',
-        "messages": [message.model_dump() for message in forked_prompt.data[0]["messages"]],
+        "description": fork_data.new_description if fork_data.new_description else forked_prompt.data[0]["description"],
+        "visibility": schemas.Visibility.private,
+        "messages": new_messages,
         "forked_from_id": forked_prompt.data[0]["id"],
+        "created_at": "now()",
+        "updated_at": "now()"
     }
     result = await user_supabase.table("prompts").insert(new_prompt).execute()
     return result.data[0]

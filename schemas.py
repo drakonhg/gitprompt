@@ -42,6 +42,8 @@ class PromptPublic(PromptBase):
 
 class PromptFork(BaseModel):
     new_title: str = Field(min_length=3, max_length=120)
+    new_messages: List[Message] | None = None
+    new_description: str | None = None
 
 
 class PromptCreateResponse(BaseModel):
