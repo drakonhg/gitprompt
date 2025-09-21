@@ -83,15 +83,14 @@ async def fork_prompt(
         new_messages = [message for message in forked_prompt.data["messages"]]
     
     new_prompt = {
-        "id": uuid.uuid4(),
         "title": fork_data.new_title,
         "title_slug": slugify(fork_data.new_title),
         "description": fork_data.new_description if fork_data.new_description else forked_prompt.data["description"],
         "visibility": schemas.Visibility.private,
         "messages": new_messages,
         "forked_from_id": forked_prompt.data["id"],
-        "created_at": "now()",
-        "updated_at": "now()"
+        "user_id": user_id,
+        "created_at": "now()"
     }
     result = await user_supabase.table("prompts").insert(new_prompt).execute()
     return result.data[0]
