@@ -80,7 +80,7 @@ async def fork_prompt(
     if fork_data.new_messages:
         new_messages = [message.model_dump() for message in fork_data.new_messages]
     else:
-        new_messages = [message.model_dump() for message in forked_prompt.data["messages"]]
+        new_messages = [message for message in forked_prompt.data["messages"]]
     
     new_prompt = {
         "id": uuid.uuid4(),
