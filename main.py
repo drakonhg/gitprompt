@@ -2,10 +2,8 @@ from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Annotated
 import uuid
-from datetime import datetime, timezone
 from dotenv import load_dotenv
 from supabase import AsyncClient
-from pydantic import TypeAdapter
 
 import schemas
 import auth

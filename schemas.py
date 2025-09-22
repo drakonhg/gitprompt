@@ -22,8 +22,8 @@ class Message(BaseModel):
 
 
 class ForkInfo(BaseModel):
-    forked_from_username: str
-    forked_from_prompt_title: str
+    forked_from_username: str | None = None
+    forked_from_prompt_title: str | None = None
 
 
 class PromptBase(BaseModel):
