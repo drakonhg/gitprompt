@@ -55,15 +55,25 @@ async def create_prompt(
     result = await user_supabase.table("prompts").insert(new_prompt).execute()
     return result.data[0]
 
-@app.get("/prompts/{prompt_slug}", response_model=schemas.PromptPublic)
+@app.get("/prompts/{prompt_slug}", response_model=schemas.PromptPublicById)
 async def read_prompt(
     prompt_slug: str,
     user_supabase: Annotated[AsyncClient, Depends(auth.get_supabase_client_with_auth)],
     user_id: Annotated[uuid.UUID, Depends(auth.get_current_user_id)]
 ):
-    prompt = await user_supabase.table("prompts").select("*").eq("user_id", user_id).eq("title_slug", prompt_slug).single().execute()
+    prompt = await user_supabase.rpc(
+        "get_prompt_details",
+        {
+            "prompt_slug": prompt_slug,
+            "user_identifier": user_id
+        }
+    ).single().execute()
     if not prompt:
         raise HTTPException(status_code=404, detail="Prompt not found")
+    prompt.data["forked_from"] = {
+        "forked_from_prompt_title": prompt.data["forked_from_prompt_slug"],
+        "forked_from_username": prompt.data["forked_from_username"]
+    }
     return prompt.data
 
 @app.post("/prompts/{prompt_slug}/fork", response_model=schemas.PromptPublic, status_code=201)

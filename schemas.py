@@ -21,6 +21,11 @@ class Message(BaseModel):
     content: str
 
 
+class ForkInfo(BaseModel):
+    forked_from_username: str
+    forked_from_prompt_title: str
+
+
 class PromptBase(BaseModel):
     title: str = Field(min_length=3, max_length=120)
     description: str = Field(default="", max_length=1000)
@@ -52,3 +57,10 @@ class PromptCreateResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+class PromptPublicById(PromptBase):
+    id: uuid.UUID
+    title_slug: str
+    created_at: datetime
+    updated_at: datetime | None = None
+    forked_from: ForkInfo | None = None
