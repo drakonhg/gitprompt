@@ -64,3 +64,15 @@ class PromptPublicById(PromptBase):
     created_at: datetime
     updated_at: datetime | None = None
     forked_from: ForkInfo | None = None
+
+
+class ApiKeyRequest(BaseModel):
+    api_key_name: str = Field(min_length=1, max_length=100)
+
+
+class ApiKeyResponse(BaseModel):
+    api_key: str
+    name: str
+    created_at: datetime
+    last_used_at: datetime | None = None
+    is_active: bool = True
