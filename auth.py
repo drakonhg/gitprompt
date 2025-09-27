@@ -1,42 +1,56 @@
+from datetime import datetime, timezone
 import os
 from uuid import UUID
+
 from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from supabase import AsyncClient, acreate_client
-from dotenv import load_dotenv
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from jose import JWTError, jwt
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Annotated
 
-load_dotenv()
+from database import get_db
+from models import User
 
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+SECRET_KEY = os.getenv("JWT_SECRET_KEY")
+ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 bearer_scheme = HTTPBearer()
-
-
-async def get_supabase_client() -> AsyncClient:
-    return await acreate_client(SUPABASE_URL, SUPABASE_KEY)
-
-
-async def get_supabase_client_with_auth(
-    credentials: Annotated[HTTPAuthorizationCredentials, Depends(bearer_scheme)],
-) -> AsyncClient:
-    client = await acreate_client(SUPABASE_URL, SUPABASE_KEY)
-    client.postgrest.auth(credentials.credentials)
-    return client
 
 
 async def get_current_user_id(
     credentials: Annotated[HTTPAuthorizationCredentials, Depends(bearer_scheme)],
-    supabase: Annotated[AsyncClient, Depends(get_supabase_client)]
+    db: Annotated[AsyncSession, Depends(get_db)],
 ) -> UUID:
 
-    token = credentials.credentials
     try:
-        user_response = await supabase.auth.get_user(token)
-        user_id = user_response.user.id
-        return user_id
-        
-    except Exception as e:
+        print(credentials.credentials)
+        payload = jwt.decode(
+            credentials.credentials, 
+            SECRET_KEY, 
+            algorithms=[ALGORITHM], 
+            audience="authenticated"
+        )
+        print(payload)
+        user_id_str: str | None = payload.get("sub")
+        if user_id_str is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token missing subject",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        user_id = UUID(user_id_str)
+        result = await db.execute(select(User.id).where(User.id == user_id))
+        row = result.first()
+        if not row:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        return row.id
+    except (JWTError, ValueError) as e:
+        print(e)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Invalid authentication credentials: {e}",

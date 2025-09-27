@@ -1,69 +1,83 @@
 import uuid
-import json
-from sqlalchemy import text
+from typing import Sequence
+
+from slugify import slugify
+from sqlalchemy import select
+from sqlalchemy.orm import joinedload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import schemas
+from models import Prompt
 
-async def get_prompts_by_user_id(db: AsyncSession, user_id: uuid.UUID):
+
+async def get_prompts_by_user_id(db: AsyncSession, user_id: uuid.UUID) -> Sequence[Prompt]:
     result = await db.execute(
-        text("SELECT id, name, forked_from_id, created_at, updated_at, visibility, messages FROM prompts WHERE user_id = :user_id"),
-        {"user_id": user_id}
+        select(Prompt)
+        .where(Prompt.user_id == user_id)
+        .options(joinedload(Prompt.forked_from))
+        .order_by(Prompt.created_at.desc())
     )
-    rows = result.fetchall()
-    return [dict(row._mapping) for row in rows]
+    return result.scalars().all()
 
-async def get_prompt_by_name(db: AsyncSession, user_id: uuid.UUID, name: str):
+
+async def get_prompt_by_slug(db: AsyncSession, user_id: uuid.UUID, slug: str) -> Prompt | None:
     result = await db.execute(
-        text("SELECT id, name, forked_from_id, created_at, updated_at, visibility, messages FROM prompts WHERE user_id = :user_id AND name = :name"),
-        {"user_id": user_id, "name": name}
+        select(Prompt)
+        .where(Prompt.user_id == user_id, Prompt.title_slug == slug)
+        .options(joinedload(Prompt.forked_from))
     )
-    row = result.fetchone()
-    return dict(row._mapping) if row else None
+    return result.scalars().first()
 
-async def create_prompt(db: AsyncSession, user_id: uuid.UUID, prompt: schemas.PromptCreate):
-    result = await db.execute(
-        text("""
-            INSERT INTO prompts (user_id, name, visibility, messages)
-            VALUES (:user_id, :name, :visibility, :messages)
-            RETURNING id, name, forked_from_id, created_at, updated_at, visibility, messages
-        """),
-        {
-            "user_id": user_id,
-            "name": prompt.name,
-            "visibility": prompt.visibility,
-            "messages": json.dumps([m.dict() for m in prompt.messages])
-        }
+
+async def create_prompt(db: AsyncSession, user_id: uuid.UUID, prompt: schemas.PromptCreate) -> Prompt:
+    new_prompt = Prompt(
+        user_id=user_id,
+        title=prompt.title,
+        title_slug=slugify(prompt.title),
+        description=prompt.description,
+        visibility=prompt.visibility.value,
+        messages=[message.model_dump() for message in prompt.messages],
     )
-    row = result.fetchone()
-    await db.commit()
-    return dict(row._mapping)
+    db.add(new_prompt)
+    await db.flush()
+    await db.refresh(new_prompt)
+    return new_prompt
 
-async def fork_prompt(db: AsyncSession, user_id: uuid.UUID, original_prompt_name: str, new_prompt_name: str):
-    async with db.begin():
-        result = await db.execute(
-            text("SELECT id, messages FROM prompts WHERE user_id = :user_id AND name = :name"),
-            {"user_id": user_id, "name": original_prompt_name}
-        )
-        original_prompt = result.fetchone()
 
-        if not original_prompt:
-            return None
+async def update_prompt(db: AsyncSession, existing_prompt: Prompt, prompt: schemas.PromptCreate) -> Prompt:
+    existing_prompt.title = prompt.title
+    existing_prompt.title_slug = slugify(prompt.title)
+    existing_prompt.description = prompt.description
+    existing_prompt.visibility = prompt.visibility.value
+    existing_prompt.messages = [message.model_dump() for message in prompt.messages]
+    await db.flush()
+    await db.refresh(existing_prompt)
+    return existing_prompt
 
-        result = await db.execute(
-            text("""
-                INSERT INTO prompts (user_id, name, visibility, messages, forked_from_id)
-                VALUES (:user_id, :name, :visibility, :messages, :forked_from_id)
-                RETURNING id, name, forked_from_id, created_at, updated_at, visibility, messages
-            """),
-            {
-                "user_id": user_id,
-                "name": new_prompt_name,
-                "visibility": 'private',
-                "messages": original_prompt._mapping["messages"],
-                "forked_from_id": original_prompt._mapping["id"]
-            }
-        )
-        row = result.fetchone()
-        await db.commit()
-        return dict(row._mapping)
+
+async def delete_prompt(db: AsyncSession, prompt: Prompt) -> None:
+    await db.delete(prompt)
+    await db.flush()
+
+
+async def fork_prompt(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    source_prompt: Prompt,
+    new_title: str,
+    new_description: str | None,
+    new_messages: list[schemas.Message] | None,
+) -> Prompt:
+    forked_prompt = Prompt(
+        user_id=user_id,
+        title=new_title,
+        title_slug=slugify(new_title),
+        description=new_description if new_description is not None else source_prompt.description,
+        visibility=schemas.Visibility.private.value,
+        messages=[msg.model_dump() for msg in new_messages] if new_messages else list(source_prompt.messages),
+        forked_from_id=source_prompt.id,
+    )
+    db.add(forked_prompt)
+    await db.flush()
+    await db.refresh(forked_prompt)
+    return forked_prompt

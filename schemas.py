@@ -1,5 +1,5 @@
 from enum import Enum
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import List
 import uuid
 from datetime import datetime
@@ -27,6 +27,8 @@ class ForkInfo(BaseModel):
 
 
 class PromptBase(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     title: str = Field(min_length=3, max_length=120)
     description: str = Field(default="", max_length=1000)
     visibility: Visibility
@@ -38,6 +40,8 @@ class PromptCreate(PromptBase):
 
 
 class PromptPublic(PromptBase):
+    model_config = ConfigDict(from_attributes=True)
+
     id: uuid.UUID
     title_slug: str
     created_at: datetime
@@ -52,13 +56,14 @@ class PromptFork(BaseModel):
 
 
 class PromptCreateResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: uuid.UUID
     created_at: datetime
 
-    class Config:
-        from_attributes = True
-
 class PromptPublicById(PromptBase):
+    model_config = ConfigDict(from_attributes=True)
+
     id: uuid.UUID
     title_slug: str
     created_at: datetime
