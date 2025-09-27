@@ -1,7 +1,8 @@
 from fastapi import Depends, FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Annotated, List
-import uuid
+import uuid 
+import os
 from dotenv import load_dotenv
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,7 +25,7 @@ app = FastAPI()
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, replace with your frontend domain
+    allow_origins=[os.getenv("CORS_ORIGIN")],  # In production, replace with your frontend domain
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -42,14 +43,16 @@ async def read_prompts(
     prompts = await get_prompts_by_user_id(db, user_id)
     return [schemas.PromptPublic.model_validate(prompt) for prompt in prompts]
 
-@app.post("/prompts", response_model=schemas.PromptPublic, status_code=201)
+@app.post("/prompts", response_model=schemas.PromptCreateResponse, status_code=201)
 async def create_prompt(
     prompt: schemas.PromptCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
     user_id: Annotated[uuid.UUID, Depends(auth.get_current_user_id)],
 ):
+    print("PROMPT", prompt)
     new_prompt = await repo_create_prompt(db, user_id, prompt)
-    return schemas.PromptPublic.model_validate(new_prompt)
+    print("NEW PROMPT DB RESPONSE", new_prompt)
+    return new_prompt
 
 @app.get("/prompts/{prompt_slug}", response_model=schemas.PromptPublicById)
 async def read_prompt(

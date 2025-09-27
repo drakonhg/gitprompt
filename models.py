@@ -12,7 +12,7 @@ from database import Base
 
 
 class User(Base):
-    __tablename__ = "users"
+    __tablename__ = "profiles"
 
     id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     username: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
@@ -26,7 +26,7 @@ class Prompt(Base):
     __tablename__ = "prompts"
 
     id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("profiles.id", ondelete="CASCADE"), nullable=False, index=True)
     user: Mapped[User] = relationship("User", back_populates="prompts", lazy="joined")
 
     title: Mapped[str] = mapped_column(String(120), nullable=False)

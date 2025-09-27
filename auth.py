@@ -23,14 +23,12 @@ async def get_current_user_id(
 ) -> UUID:
 
     try:
-        print(credentials.credentials)
         payload = jwt.decode(
             credentials.credentials, 
             SECRET_KEY, 
             algorithms=[ALGORITHM], 
             audience="authenticated"
         )
-        print(payload)
         user_id_str: str | None = payload.get("sub")
         if user_id_str is None:
             raise HTTPException(

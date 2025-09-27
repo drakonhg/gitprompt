@@ -10,7 +10,7 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 # Convert postgres:// to postgresql+asyncpg:// for SQLAlchemy
 if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
-print(DATABASE_URL)
+
 engine = create_async_engine(
     DATABASE_URL,
     pool_size=10,

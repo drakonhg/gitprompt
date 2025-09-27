@@ -30,6 +30,7 @@ async def get_prompt_by_slug(db: AsyncSession, user_id: uuid.UUID, slug: str) ->
 
 
 async def create_prompt(db: AsyncSession, user_id: uuid.UUID, prompt: schemas.PromptCreate) -> Prompt:
+    print("PROMPT", prompt)
     new_prompt = Prompt(
         user_id=user_id,
         title=prompt.title,
@@ -41,6 +42,7 @@ async def create_prompt(db: AsyncSession, user_id: uuid.UUID, prompt: schemas.Pr
     db.add(new_prompt)
     await db.flush()
     await db.refresh(new_prompt)
+    print("NEW PROMPT", new_prompt)
     return new_prompt
 
 
@@ -50,14 +52,12 @@ async def update_prompt(db: AsyncSession, existing_prompt: Prompt, prompt: schem
     existing_prompt.description = prompt.description
     existing_prompt.visibility = prompt.visibility.value
     existing_prompt.messages = [message.model_dump() for message in prompt.messages]
-    await db.flush()
     await db.refresh(existing_prompt)
     return existing_prompt
 
 
 async def delete_prompt(db: AsyncSession, prompt: Prompt) -> None:
     await db.delete(prompt)
-    await db.flush()
 
 
 async def fork_prompt(
@@ -78,6 +78,5 @@ async def fork_prompt(
         forked_from_id=source_prompt.id,
     )
     db.add(forked_prompt)
-    await db.flush()
     await db.refresh(forked_prompt)
     return forked_prompt
