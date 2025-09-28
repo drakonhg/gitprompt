@@ -21,13 +21,12 @@ async def get_current_user_id(
     credentials: Annotated[HTTPAuthorizationCredentials, Depends(bearer_scheme)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> UUID:
-
     try:
         payload = jwt.decode(
-            credentials.credentials, 
-            SECRET_KEY, 
-            algorithms=[ALGORITHM], 
-            audience="authenticated"
+            credentials.credentials,
+            SECRET_KEY,
+            algorithms=[ALGORITHM],
+            audience="authenticated",
         )
         user_id_str: str | None = payload.get("sub")
         if user_id_str is None:

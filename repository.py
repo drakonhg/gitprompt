@@ -10,7 +10,9 @@ import schemas
 from models import Prompt
 
 
-async def get_prompts_by_user_id(db: AsyncSession, user_id: uuid.UUID) -> Sequence[Prompt]:
+async def get_prompts_by_user_id(
+    db: AsyncSession, user_id: uuid.UUID
+) -> Sequence[Prompt]:
     result = await db.execute(
         select(Prompt)
         .where(Prompt.user_id == user_id)
@@ -20,7 +22,9 @@ async def get_prompts_by_user_id(db: AsyncSession, user_id: uuid.UUID) -> Sequen
     return result.scalars().all()
 
 
-async def get_prompt_by_slug(db: AsyncSession, user_id: uuid.UUID, slug: str) -> Prompt | None:
+async def get_prompt_by_slug(
+    db: AsyncSession, user_id: uuid.UUID, slug: str
+) -> Prompt | None:
     result = await db.execute(
         select(Prompt)
         .where(Prompt.user_id == user_id, Prompt.title_slug == slug)
@@ -29,8 +33,9 @@ async def get_prompt_by_slug(db: AsyncSession, user_id: uuid.UUID, slug: str) ->
     return result.scalars().first()
 
 
-async def create_prompt(db: AsyncSession, user_id: uuid.UUID, prompt: schemas.PromptCreate) -> Prompt:
-    print("PROMPT", prompt)
+async def create_prompt(
+    db: AsyncSession, user_id: uuid.UUID, prompt: schemas.PromptCreate
+) -> Prompt:
     new_prompt = Prompt(
         user_id=user_id,
         title=prompt.title,
@@ -42,11 +47,12 @@ async def create_prompt(db: AsyncSession, user_id: uuid.UUID, prompt: schemas.Pr
     db.add(new_prompt)
     await db.flush()
     await db.refresh(new_prompt)
-    print("NEW PROMPT", new_prompt)
     return new_prompt
 
 
-async def update_prompt(db: AsyncSession, existing_prompt: Prompt, prompt: schemas.PromptCreate) -> Prompt:
+async def update_prompt(
+    db: AsyncSession, existing_prompt: Prompt, prompt: schemas.PromptCreate
+) -> Prompt:
     existing_prompt.title = prompt.title
     existing_prompt.title_slug = slugify(prompt.title)
     existing_prompt.description = prompt.description
@@ -72,9 +78,13 @@ async def fork_prompt(
         user_id=user_id,
         title=new_title,
         title_slug=slugify(new_title),
-        description=new_description if new_description is not None else source_prompt.description,
+        description=new_description
+        if new_description is not None
+        else source_prompt.description,
         visibility=schemas.Visibility.private.value,
-        messages=[msg.model_dump() for msg in new_messages] if new_messages else list(source_prompt.messages),
+        messages=[msg.model_dump() for msg in new_messages]
+        if new_messages
+        else list(source_prompt.messages),
         forked_from_id=source_prompt.id,
     )
     db.add(forked_prompt)

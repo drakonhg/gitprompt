@@ -13,9 +13,14 @@ if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
 
 engine = create_async_engine(
     DATABASE_URL,
-    pool_size=10,
-    max_overflow=20,
+    pool_size=5,
+    max_overflow=10,
     echo=True,
+    pool_pre_ping=True,
+    connect_args={
+        "timeout": 30,
+        "command_timeout": 60,
+    },
 )
 
 async_session = async_sessionmaker(engine, expire_on_commit=False)
@@ -27,4 +32,5 @@ class Base(DeclarativeBase):
 
 async def get_db():
     async with async_session() as session:
-        yield session
+        async with session.begin():
+            yield session

@@ -5,85 +5,93 @@ from urllib.parse import urljoin, urlparse
 import subprocess
 import time
 
+
 class M3U8Downloader:
     def __init__(self, m3u8_content, output_file="output.mp4"):
         self.m3u8_content = m3u8_content
         self.output_file = output_file
         self.segments = []
         self.base_url = ""
-        
+
     def parse_m3u8(self):
         """Parse M3U8 content and extract segment URLs"""
-        lines = self.m3u8_content.strip().split('\n')
-        
+        lines = self.m3u8_content.strip().split("\n")
+
         for line in lines:
-            if line.startswith('http'):
+            if line.startswith("http"):
                 self.segments.append(line.strip())
-                
+
         # Extract base URL from first segment
         if self.segments:
             parsed = urlparse(self.segments[0])
             self.base_url = f"{parsed.scheme}://{parsed.netloc}"
-            
+
         print(f"Found {len(self.segments)} segments")
         return self.segments
-    
+
     def download_segment(self, url, filename, max_retries=3):
         """Download a single segment with retry logic"""
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Referer': self.base_url,
-            'Accept': '*/*',
-            'Connection': 'keep-alive'
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Referer": self.base_url,
+            "Accept": "*/*",
+            "Connection": "keep-alive",
         }
-        
+
         for attempt in range(max_retries):
             try:
                 response = requests.get(url, headers=headers, timeout=30)
                 response.raise_for_status()
-                
-                with open(filename, 'wb') as f:
+
+                with open(filename, "wb") as f:
                     f.write(response.content)
                 return True
-                
+
             except requests.RequestException as e:
                 print(f"Attempt {attempt + 1} failed for {filename}: {e}")
                 if attempt < max_retries - 1:
-                    time.sleep(2 ** attempt)  # Exponential backoff
-                    
+                    time.sleep(2**attempt)  # Exponential backoff
+
         return False
-    
+
     def download_segments(self):
         """Download all segments"""
         os.makedirs("segments", exist_ok=True)
         successful_segments = []
-        
+
         for i, segment_url in enumerate(self.segments):
             segment_file = f"segments/segment_{i:04d}.ts"
-            print(f"Downloading segment {i+1}/{len(self.segments)}: {segment_file}")
-            
+            print(f"Downloading segment {i + 1}/{len(self.segments)}: {segment_file}")
+
             if self.download_segment(segment_url, segment_file):
                 successful_segments.append(segment_file)
             else:
                 print(f"Failed to download segment {i}")
-                
+
         return successful_segments
-    
+
     def concatenate_segments(self, segment_files):
         """Use FFmpeg to concatenate segments into MP4"""
         # Create file list for FFmpeg
         with open("segments_list.txt", "w") as f:
             for segment_file in segment_files:
                 f.write(f"file '{segment_file}'\n")
-        
+
         # FFmpeg command to concatenate
         cmd = [
-            "ffmpeg", "-f", "concat", "-safe", "0", 
-            "-i", "segments_list.txt", 
-            "-c", "copy", 
-            self.output_file, "-y"
+            "ffmpeg",
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            "segments_list.txt",
+            "-c",
+            "copy",
+            self.output_file,
+            "-y",
         ]
-        
+
         try:
             subprocess.run(cmd, check=True, capture_output=True)
             print(f"Successfully created {self.output_file}")
@@ -91,15 +99,16 @@ class M3U8Downloader:
         except subprocess.CalledProcessError as e:
             print(f"FFmpeg error: {e}")
             return False
-    
+
     def cleanup(self):
         """Remove temporary files"""
         import shutil
+
         if os.path.exists("segments"):
             shutil.rmtree("segments")
         if os.path.exists("segments_list.txt"):
             os.remove("segments_list.txt")
-    
+
     def download(self):
         """Main download function"""
         try:
@@ -108,28 +117,31 @@ class M3U8Downloader:
             if not self.segments:
                 print("No segments found in M3U8")
                 return False
-            
+
             # Download segments
             successful_segments = self.download_segments()
-            
+
             if not successful_segments:
                 print("No segments downloaded successfully")
                 return False
-            
-            print(f"Downloaded {len(successful_segments)}/{len(self.segments)} segments")
-            
+
+            print(
+                f"Downloaded {len(successful_segments)}/{len(self.segments)} segments"
+            )
+
             # Concatenate segments
             success = self.concatenate_segments(successful_segments)
-            
+
             # Cleanup
             self.cleanup()
-            
+
             return success
-            
+
         except Exception as e:
             print(f"Error during download: {e}")
             self.cleanup()
             return False
+
 
 # Usage example
 def main():
@@ -471,14 +483,15 @@ https://m4k81mzy85.a.trbcdn.net/api/storage/chunk/b15666d2e79bcf26767518b2617aa2
 
 #EXT-X-ENDLIST
     """
-    
+
     downloader = M3U8Downloader(m3u8_content, "downloaded_video.mp4")
     success = downloader.download()
-    
+
     if success:
         print("Download completed successfully!")
     else:
         print("Download failed!")
+
 
 if __name__ == "__main__":
     main()

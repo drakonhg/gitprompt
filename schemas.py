@@ -29,7 +29,7 @@ class ForkInfo(BaseModel):
 class PromptBase(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
-    title: str = Field(min_length=3, max_length=120)
+    title: str = Field(min_length=3, max_length=60)
     description: str = Field(default="", max_length=1000)
     visibility: Visibility
     messages: List[Message]
@@ -50,7 +50,7 @@ class PromptPublic(PromptBase):
 
 
 class PromptFork(BaseModel):
-    new_title: str = Field(min_length=3, max_length=120)
+    new_title: str = Field(min_length=3, max_length=60)
     new_messages: List[Message] | None = None
     new_description: str | None = None
 
@@ -60,6 +60,7 @@ class PromptCreateResponse(BaseModel):
 
     id: uuid.UUID
     created_at: datetime
+
 
 class PromptPublicById(PromptBase):
     model_config = ConfigDict(from_attributes=True)
