@@ -13,14 +13,10 @@ if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
 
 engine = create_async_engine(
     DATABASE_URL,
-    pool_size=5,
-    max_overflow=10,
+    pool_size=2,
+    max_overflow=6,
     echo=True,
-    pool_pre_ping=True,
-    connect_args={
-        "timeout": 30,
-        "command_timeout": 60,
-    },
+    pool_recycle=3600,
 )
 
 async_session = async_sessionmaker(engine, expire_on_commit=False)

@@ -1,8 +1,9 @@
 import uuid
+import math
 from typing import Sequence
 
 from slugify import slugify
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.orm import joinedload
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,15 +12,40 @@ from models import Prompt
 
 
 async def get_prompts_by_user_id(
-    db: AsyncSession, user_id: uuid.UUID
+    db: AsyncSession, 
+    user_id: uuid.UUID,
+    page: int = 1,
+    page_size: int = 12,
 ) -> Sequence[Prompt]:
+    count_query = select(func.count(Prompt.id)).where(Prompt.user_id == user_id)
+    total_items_result = await db.execute(count_query)
+    total_prompts = total_items_result.scalar_one()
+
+    if total_prompts == 0:
+        return {
+            "total_prompts": 0, "total_pages": 0, "current_page": page,
+            "page_size": page_size, "prompts": []
+        }
+    
+    offset = (page - 1) * page_size
+    total_pages = math.ceil(total_prompts / page_size)
+
+
     result = await db.execute(
         select(Prompt)
         .where(Prompt.user_id == user_id)
-        .options(joinedload(Prompt.forked_from))
         .order_by(Prompt.created_at.desc())
+        .offset(offset)
+        .limit(page_size)
     )
-    return result.scalars().all()
+    prompts = result.scalars().all()
+    return {
+        "total_prompts": total_prompts,
+        "total_pages": total_pages,
+        "current_page": page,
+        "page_size": page_size,
+        "prompts": prompts
+    }
 
 
 async def get_prompt_by_slug(
@@ -58,6 +84,7 @@ async def update_prompt(
     existing_prompt.description = prompt.description
     existing_prompt.visibility = prompt.visibility.value
     existing_prompt.messages = [message.model_dump() for message in prompt.messages]
+    await db.flush()
     await db.refresh(existing_prompt)
     return existing_prompt
 
@@ -88,5 +115,6 @@ async def fork_prompt(
         forked_from_id=source_prompt.id,
     )
     db.add(forked_prompt)
+    await db.flush()
     await db.refresh(forked_prompt)
     return forked_prompt

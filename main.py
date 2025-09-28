@@ -1,6 +1,6 @@
-from fastapi import Depends, FastAPI, HTTPException, Response
+from fastapi import Depends, FastAPI, HTTPException, Response, Query
 from fastapi.middleware.cors import CORSMiddleware
-from typing import Annotated, List
+from typing import Annotated
 import uuid
 import os
 from dotenv import load_dotenv
@@ -38,9 +38,7 @@ app = FastAPI(lifespan=lifespan)
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        os.getenv("CORS_ORIGIN")
-    ],  # In production, replace with your frontend domain
+    allow_origins=[os.getenv("CORS_ORIGIN")],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -52,13 +50,23 @@ async def health_check():
     return {"status": "healthy", "message": "GitPrompt API is running"}
 
 
-@app.get("/prompts", response_model=List[schemas.PromptPublic])
+@app.get("/prompts", response_model=schemas.PaginatedPrompts)
 async def read_prompts(
     db: Annotated[AsyncSession, Depends(get_db)],
     user_id: Annotated[uuid.UUID, Depends(auth.get_current_user_id)],
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(12, ge=1, le=100, description="Number of prompts per page"),
 ):
-    prompts = await get_prompts_by_user_id(db, user_id)
-    return [schemas.PromptPublic.model_validate(prompt) for prompt in prompts]
+    result = await get_prompts_by_user_id(db, user_id, page, page_size)
+
+    prompts = [schemas.PromptPublic.model_validate(prompt) for prompt in result["prompts"]]
+    return schemas.PaginatedPrompts.model_validate({
+        "total_prompts": result["total_prompts"],
+        "total_pages": result["total_pages"],
+        "current_page": result["current_page"],
+        "page_size": result["page_size"],
+        "prompts": prompts
+    }) 
 
 
 @app.post("/prompts", response_model=schemas.PromptCreateResponse, status_code=201)

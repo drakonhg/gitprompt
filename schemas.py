@@ -70,3 +70,11 @@ class PromptPublicById(PromptBase):
     created_at: datetime
     updated_at: datetime | None = None
     forked_from: ForkInfo | None = None
+
+
+class PaginatedPrompts(BaseModel):
+    total_prompts: int
+    total_pages: int
+    current_page: int
+    page_size: int
+    prompts: List[PromptPublic]
