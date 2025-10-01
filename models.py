@@ -11,6 +11,36 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from database import Base
 
 
+class APIKey(Base):
+    __tablename__ = "api_keys"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("profiles.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user: Mapped[User] = relationship("User", back_populates="api_keys", lazy="joined")
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    key_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    key_prefix: Mapped[str] = mapped_column(Text, nullable=False)  # Now stores last 5 characters
+    salt: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    @property
+    def key_display(self) -> str:
+        """Return formatted key display showing gpk-...[last 5 characters]."""
+        # Always show "gpk-" at the beginning
+        # key_prefix now stores the last 5 characters of the real API key
+        return f"gpk-...{self.key_prefix}"
+
+
 class User(Base):
     __tablename__ = "profiles"
 
@@ -24,6 +54,7 @@ class User(Base):
     )
 
     prompts: Mapped[list[Prompt]] = relationship("Prompt", back_populates="user")
+    api_keys: Mapped[list[APIKey]] = relationship("APIKey", back_populates="user")
 
 
 class Prompt(Base):

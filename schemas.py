@@ -78,3 +78,61 @@ class PaginatedPrompts(BaseModel):
     current_page: int
     page_size: int
     prompts: List[PromptPublic]
+
+
+class PromptPublicAPIKey(BaseModel):
+    """Limited prompt response for API key access - read-only fields only."""
+    model_config = ConfigDict(from_attributes=True)
+
+    title_slug: str
+    messages: List[Message]
+    visibility: Visibility
+    title: str
+    description: str
+
+
+class PromptPublicByIdAPIKey(BaseModel):
+    """Limited individual prompt response for API key access - read-only fields only."""
+    model_config = ConfigDict(from_attributes=True)
+
+    title_slug: str
+    messages: List[Message]
+    visibility: Visibility
+    title: str
+    description: str
+
+
+class PaginatedPromptsAPIKey(BaseModel):
+    """Paginated response for API key access."""
+    total_prompts: int
+    total_pages: int
+    current_page: int
+    page_size: int
+    prompts: List[PromptPublicAPIKey]
+
+
+class APIKeyCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=255, description="Name for the API key")
+
+
+class APIKeyResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    name: str
+    key_display: str
+    created_at: datetime
+    last_used_at: datetime | None = None
+
+
+class APIKeyCreateResponse(BaseModel):
+    id: uuid.UUID
+    name: str
+    key: str
+    key_display: str
+    created_at: datetime
+
+
+class APIKeyRegenerate(BaseModel):
+    """Request schema for regenerating an API key."""
+    pass

@@ -6,7 +6,7 @@ import os
 from dotenv import load_dotenv
 from sqlalchemy.ext.asyncio import AsyncSession
 from contextlib import asynccontextmanager
-import auth
+from auth import get_current_user_id, get_current_user_id_readonly
 import schemas
 from database import get_db, engine
 from repository import (
@@ -16,6 +16,11 @@ from repository import (
     get_prompt_by_slug,
     get_prompts_by_user_id,
     update_prompt as repo_update_prompt,
+    create_api_key,
+    get_api_keys_by_user_id,
+    regenerate_api_key,
+    delete_api_key,
+    get_api_key_by_user_id
 )
 
 load_dotenv()
@@ -35,7 +40,6 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
-# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[os.getenv("CORS_ORIGIN")],
@@ -53,12 +57,11 @@ async def health_check():
 @app.get("/prompts", response_model=schemas.PaginatedPrompts)
 async def read_prompts(
     db: Annotated[AsyncSession, Depends(get_db)],
-    user_id: Annotated[uuid.UUID, Depends(auth.get_current_user_id)],
+    user_id: Annotated[uuid.UUID, Depends(get_current_user_id_readonly)],
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(12, ge=1, le=100, description="Number of prompts per page"),
 ):
     result = await get_prompts_by_user_id(db, user_id, page, page_size)
-
     prompts = [schemas.PromptPublic.model_validate(prompt) for prompt in result["prompts"]]
     return schemas.PaginatedPrompts.model_validate({
         "total_prompts": result["total_prompts"],
@@ -73,7 +76,7 @@ async def read_prompts(
 async def create_prompt(
     prompt: schemas.PromptCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
-    user_id: Annotated[uuid.UUID, Depends(auth.get_current_user_id)],
+    user_id: Annotated[uuid.UUID, Depends(get_current_user_id)],
 ):
     new_prompt = await repo_create_prompt(db, user_id, prompt)
     return new_prompt
@@ -83,7 +86,7 @@ async def create_prompt(
 async def read_prompt(
     prompt_slug: str,
     db: Annotated[AsyncSession, Depends(get_db)],
-    user_id: Annotated[uuid.UUID, Depends(auth.get_current_user_id)],
+    user_id: Annotated[uuid.UUID, Depends(get_current_user_id_readonly)],
 ):
     prompt = await get_prompt_by_slug(db, user_id, prompt_slug)
     if not prompt:
@@ -120,7 +123,7 @@ async def fork_prompt(
     prompt_slug: str,
     fork_data: schemas.PromptFork,
     db: Annotated[AsyncSession, Depends(get_db)],
-    user_id: Annotated[uuid.UUID, Depends(auth.get_current_user_id)],
+    user_id: Annotated[uuid.UUID, Depends(get_current_user_id)],
 ):
     source_prompt = await get_prompt_by_slug(db, user_id, prompt_slug)
     if not source_prompt:
@@ -140,7 +143,7 @@ async def fork_prompt(
 async def delete_prompt(
     prompt_slug: str,
     db: Annotated[AsyncSession, Depends(get_db)],
-    user_id: Annotated[uuid.UUID, Depends(auth.get_current_user_id)],
+    user_id: Annotated[uuid.UUID, Depends(get_current_user_id)],
 ):
     prompt = await get_prompt_by_slug(db, user_id, prompt_slug)
     if not prompt:
@@ -154,10 +157,81 @@ async def update_prompt(
     prompt_slug: str,
     prompt: schemas.PromptCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
-    user_id: Annotated[uuid.UUID, Depends(auth.get_current_user_id)],
+    user_id: Annotated[uuid.UUID, Depends(get_current_user_id)],
 ):
     existing_prompt = await get_prompt_by_slug(db, user_id, prompt_slug)
     if not existing_prompt:
         raise HTTPException(status_code=404, detail="Prompt not found")
     updated_prompt = await repo_update_prompt(db, existing_prompt, prompt)
     return schemas.PromptCreateResponse.model_validate(updated_prompt)
+
+
+@app.post("/account/generate-api-key", response_model=schemas.APIKeyCreateResponse, status_code=201)
+async def generate_api_key(
+    api_key_data: schemas.APIKeyCreate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user_id: Annotated[uuid.UUID, Depends(get_current_user_id)],
+):
+    """Generate a new API key for the user."""
+    api_key, plain_key = await create_api_key(db, user_id, api_key_data.name)
+    return schemas.APIKeyCreateResponse(
+        id=api_key.id,
+        name=api_key.name,
+        key=plain_key,
+        key_display=api_key.key_display,
+        created_at=api_key.created_at,
+    )
+
+
+@app.get("/account/api-keys", response_model=list[schemas.APIKeyResponse])
+async def list_api_keys(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user_id: Annotated[uuid.UUID, Depends(get_current_user_id)],
+):
+    """List all API keys for the current user."""
+    api_keys = await get_api_keys_by_user_id(db, user_id)
+    print(api_keys)
+    return [
+        schemas.APIKeyResponse.model_validate(api_key)
+        for api_key in api_keys
+    ]
+
+
+@app.post("/account/api-keys/{key_id}/regenerate", response_model=schemas.APIKeyCreateResponse, status_code=201)
+async def regenerate_api_key_endpoint(
+    key_id: uuid.UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user_id: Annotated[uuid.UUID, Depends(get_current_user_id)],
+):
+    """Regenerate an API key (delete old, create new with same name)."""
+    try:
+        api_key, plain_key = await regenerate_api_key(db, key_id, user_id)
+        return schemas.APIKeyCreateResponse(
+            id=api_key.id,
+            name=api_key.name,
+            key=plain_key,
+            key_prefix=api_key.key_prefix,
+            created_at=api_key.created_at,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.delete("/account/api-keys/{key_id}", status_code=204)
+async def delete_api_key_endpoint(
+    key_id: uuid.UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user_id: Annotated[uuid.UUID, Depends(get_current_user_id)],
+):
+    """Delete an API key. Requires JWT authentication."""
+    # First verify the API key exists and belongs to the user
+    api_key = await get_api_key_by_user_id(db, user_id)
+    if not api_key or api_key.id != key_id:
+        raise HTTPException(
+            status_code=404,
+            detail="API key not found or doesn't belong to user"
+        )
+
+    # Delete the API key
+    await delete_api_key(db, key_id)
+    return Response(status_code=204)
