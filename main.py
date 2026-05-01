@@ -1,9 +1,14 @@
+"""FastAPI application exposing prompt CRUD and account/API-key management endpoints."""
+
 from fastapi import Depends, FastAPI, HTTPException, Response, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from typing import Annotated
 import uuid
 import os
+from importlib.metadata import version, PackageNotFoundError
 from dotenv import load_dotenv
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from contextlib import asynccontextmanager
 from auth import get_current_user_id, get_current_user_id_readonly
@@ -52,6 +57,32 @@ app.add_middleware(
 @app.get("/")
 async def health_check():
     return {"status": "healthy", "message": "GitPrompt API is running"}
+
+
+try:
+    _APP_VERSION = version("gitprompt")
+except PackageNotFoundError:
+    _APP_VERSION = "unknown"
+
+
+@app.get("/healthz")
+async def healthz():
+    db_status = "ok"
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+    except Exception as e:
+        db_status = f"error: {e}"
+
+    healthy = db_status == "ok"
+    return JSONResponse(
+        status_code=200 if healthy else 503,
+        content={
+            "status": "ok" if healthy else "error",
+            "version": _APP_VERSION,
+            "db": db_status,
+        },
+    )
 
 
 @app.get("/prompts", response_model=schemas.PaginatedPrompts)

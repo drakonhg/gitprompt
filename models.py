@@ -1,3 +1,5 @@
+"""SQLAlchemy ORM models for users, prompts (with fork lineage), and hashed API keys."""
+
 from __future__ import annotations
 
 import uuid

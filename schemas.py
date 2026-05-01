@@ -1,3 +1,5 @@
+"""Pydantic request/response schemas for prompts, fork metadata, pagination, and API-key management."""
+
 from enum import Enum
 from pydantic import BaseModel, Field, ConfigDict
 from typing import List

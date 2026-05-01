@@ -1,3 +1,5 @@
+"""Authentication dependencies: Supabase JWT verification with optional API-key fallback for read endpoints."""
+
 import os
 from uuid import UUID
 
