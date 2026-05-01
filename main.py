@@ -3,6 +3,7 @@
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.routing import APIRoute
 from typing import Annotated
 import logging
 import time
@@ -129,6 +130,54 @@ async def healthz():
     )
 
 
+def _route_uses_db(route: APIRoute) -> bool:
+    seen = set()
+    stack = [route.dependant]
+    while stack:
+        dep = stack.pop()
+        if id(dep) in seen:
+            continue
+        seen.add(id(dep))
+        if dep.call is get_db:
+            return True
+        stack.extend(dep.dependencies)
+    return False
+
+
+@app.get("/api/status")
+async def api_status():
+    db_ok = True
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+    except Exception:
+        logger.exception("api/status db check failed")
+        db_ok = False
+
+    routes = []
+    for route in app.routes:
+        path = getattr(route, "path", None)
+        if path is None:
+            continue
+        methods = sorted(getattr(route, "methods", []) or [])
+        db_dependent = isinstance(route, APIRoute) and _route_uses_db(route)
+        reachable = db_ok if db_dependent else True
+        routes.append({
+            "path": path,
+            "methods": methods,
+            "name": getattr(route, "name", None),
+            "db_dependent": db_dependent,
+            "reachable": reachable,
+        })
+    return {
+        "status": "ok" if db_ok else "degraded",
+        "version": _APP_VERSION,
+        "db": "ok" if db_ok else "error",
+        "route_count": len(routes),
+        "routes": routes,
+    }
+
+
 @app.get("/prompts", response_model=schemas.PaginatedPrompts)
 async def read_prompts(
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -214,7 +263,7 @@ async def fork_prompt(
     return schemas.PromptPublic.model_validate(new_prompt)
 
 
-@app.delete("/prompts/{prompt_slug}", status_code=204)
+@app.delete("/prompts/{prompt_slug}")
 async def delete_prompt(
     prompt_slug: str,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -224,7 +273,7 @@ async def delete_prompt(
     if not prompt:
         raise HTTPException(status_code=404, detail="Prompt not found")
     await repo_delete_prompt(db, prompt)
-    return Response(status_code=204)
+    return {"status": "deleted", "prompt_slug": prompt_slug}
 
 
 @app.put("/prompts/{prompt_slug}", response_model=schemas.PromptCreateResponse)
@@ -291,7 +340,7 @@ async def regenerate_api_key_endpoint(
         raise HTTPException(status_code=404, detail=str(e))
 
 
-@app.delete("/account/api-keys/{key_id}", status_code=204)
+@app.delete("/account/api-keys/{key_id}")
 async def delete_api_key_endpoint(
     key_id: uuid.UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -308,4 +357,4 @@ async def delete_api_key_endpoint(
 
     # Delete the API key
     await delete_api_key(db, key_id)
-    return Response(status_code=204)
+    return {"status": "deleted", "key_id": str(key_id)}
