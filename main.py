@@ -59,6 +59,11 @@ async def health_check():
     return {"status": "healthy", "message": "GitPrompt API is running"}
 
 
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
+
 try:
     _APP_VERSION = version("gitprompt")
 except PackageNotFoundError:
