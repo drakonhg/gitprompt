@@ -1,9 +1,11 @@
 """FastAPI application exposing prompt CRUD and account/API-key management endpoints."""
 
-from fastapi import Depends, FastAPI, HTTPException, Response, Query
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from typing import Annotated
+import logging
+import time
 import uuid
 import os
 from importlib.metadata import version, PackageNotFoundError
@@ -31,19 +33,52 @@ from repository import (
 load_dotenv()
 
 
+lifespan_logger = logging.getLogger("gitprompt.lifespan")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Код здесь выполняется ОДИН РАЗ ПРИ СТАРТЕ приложения
-    print("Application startup...")
+    lifespan_logger.info("Application startup...")
     # Можно добавить проверку соединения, если нужно
     # conn = await engine.connect()
     # await conn.close()
     yield
-    print("Application shutdown...")
+    lifespan_logger.info("Application shutdown...")
     await engine.dispose()
 
 
 app = FastAPI(lifespan=lifespan)
+
+logger = logging.getLogger("gitprompt.requests")
+
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    start = time.perf_counter()
+    try:
+        response = await call_next(request)
+        status_code = response.status_code
+        return response
+    except Exception:
+        status_code = 500
+        raise
+    finally:
+        duration_ms = (time.perf_counter() - start) * 1000
+        logger.info(
+            "%s %s %s %.2fms",
+            request.method,
+            request.url.path,
+            status_code,
+            duration_ms,
+            extra={
+                "method": request.method,
+                "path": request.url.path,
+                "status": status_code,
+                "duration_ms": round(duration_ms, 2),
+            },
+        )
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -73,12 +108,15 @@ except PackageNotFoundError:
 @app.get("/healthz")
 async def healthz():
     db_status = "ok"
+    db_start = time.perf_counter()
     try:
         async with engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
     except Exception as e:
+        logger.exception("healthz db check failed")
         db_status = f"error: {e}"
 
+    db_latency_ms = round((time.perf_counter() - db_start) * 1000, 2)
     healthy = db_status == "ok"
     return JSONResponse(
         status_code=200 if healthy else 503,
@@ -86,6 +124,7 @@ async def healthz():
             "status": "ok" if healthy else "error",
             "version": _APP_VERSION,
             "db": db_status,
+            "db_latency_ms": db_latency_ms,
         },
     )
 
@@ -226,7 +265,6 @@ async def list_api_keys(
 ):
     """List all API keys for the current user."""
     api_keys = await get_api_keys_by_user_id(db, user_id)
-    print(api_keys)
     return [
         schemas.APIKeyResponse.model_validate(api_key)
         for api_key in api_keys

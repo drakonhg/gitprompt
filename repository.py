@@ -2,6 +2,7 @@
 
 import uuid
 import math
+import logging
 import secrets
 import hashlib
 import hmac
@@ -16,6 +17,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import schemas
 from models import Prompt, APIKey
 
+logger = logging.getLogger(__name__)
+
 
 async def get_prompts_by_user_id(
     db: AsyncSession, 
@@ -28,11 +31,12 @@ async def get_prompts_by_user_id(
     total_prompts = total_items_result.scalar_one()
 
     if total_prompts == 0:
+        logger.info("No prompts found for user_id=%s", user_id)
         return {
             "total_prompts": 0, "total_pages": 0, "current_page": page,
             "page_size": page_size, "prompts": []
         }
-    
+
     offset = (page - 1) * page_size
     total_pages = math.ceil(total_prompts / page_size)
 
@@ -45,6 +49,10 @@ async def get_prompts_by_user_id(
         .limit(page_size)
     )
     prompts = result.scalars().all()
+    logger.info(
+        "Fetched %d prompts (page %d/%d) for user_id=%s",
+        len(prompts), page, total_pages, user_id,
+    )
     return {
         "total_prompts": total_prompts,
         "total_pages": total_pages,
@@ -62,7 +70,12 @@ async def get_prompt_by_slug(
         .where(Prompt.user_id == user_id, Prompt.title_slug == slug)
         .options(joinedload(Prompt.forked_from))
     )
-    return result.scalars().first()
+    prompt = result.scalars().first()
+    if prompt is None:
+        logger.warning("Prompt not found: user_id=%s slug=%s", user_id, slug)
+    else:
+        logger.info("Fetched prompt id=%s slug=%s user_id=%s", prompt.id, slug, user_id)
+    return prompt
 
 
 async def create_prompt(
@@ -79,6 +92,10 @@ async def create_prompt(
     db.add(new_prompt)
     await db.flush()
     await db.refresh(new_prompt)
+    logger.info(
+        "Created prompt id=%s slug=%s user_id=%s",
+        new_prompt.id, new_prompt.title_slug, user_id,
+    )
     return new_prompt
 
 
@@ -92,10 +109,18 @@ async def update_prompt(
     existing_prompt.messages = [message.model_dump() for message in prompt.messages]
     await db.flush()
     await db.refresh(existing_prompt)
+    logger.info(
+        "Updated prompt id=%s slug=%s user_id=%s",
+        existing_prompt.id, existing_prompt.title_slug, existing_prompt.user_id,
+    )
     return existing_prompt
 
 
 async def delete_prompt(db: AsyncSession, prompt: Prompt) -> None:
+    logger.info(
+        "Deleting prompt id=%s slug=%s user_id=%s",
+        prompt.id, prompt.title_slug, prompt.user_id,
+    )
     await db.delete(prompt)
 
 
@@ -123,6 +148,10 @@ async def fork_prompt(
     db.add(forked_prompt)
     await db.flush()
     await db.refresh(forked_prompt)
+    logger.info(
+        "Forked prompt id=%s slug=%s user_id=%s from source_id=%s",
+        forked_prompt.id, forked_prompt.title_slug, user_id, source_prompt.id,
+    )
     return forked_prompt
 
 
@@ -172,6 +201,10 @@ async def create_api_key(
     await db.flush()
     await db.refresh(api_key)
 
+    logger.info(
+        "Created API key id=%s name=%s user_id=%s",
+        api_key.id, name, user_id,
+    )
     return api_key, plain_key
 
 
@@ -194,8 +227,13 @@ async def get_api_key_by_key(db: AsyncSession, api_key: str) -> APIKey | None:
         if hmac.compare_digest(test_hash, key_record.key_hash):
             # Update last_used_at timestamp for security monitoring
             await update_api_key_last_used(db, key_record.id)
+            logger.info(
+                "API key matched id=%s user_id=%s",
+                key_record.id, key_record.user_id,
+            )
             return key_record
 
+    logger.warning("API key lookup failed: no matching key for provided credential")
     return None
 
 
@@ -207,6 +245,7 @@ async def update_api_key_last_used(db: AsyncSession, api_key_id: uuid.UUID) -> N
         .where(APIKey.id == api_key_id)
         .values(last_used_at=datetime.utcnow())
     )
+    logger.info("Updated last_used_at for API key id=%s", api_key_id)
 
 
 async def get_api_keys_by_user_id(
@@ -218,7 +257,9 @@ async def get_api_keys_by_user_id(
         .where(APIKey.user_id == user_id)
         .order_by(APIKey.created_at.desc())
     )
-    return result.scalars().all()
+    api_keys = result.scalars().all()
+    logger.info("Fetched %d API keys for user_id=%s", len(api_keys), user_id)
+    return api_keys
 
 
 async def get_api_key_by_user_id(
@@ -231,7 +272,12 @@ async def get_api_key_by_user_id(
         .order_by(APIKey.created_at.desc())
         .limit(1)
     )
-    return result.scalars().first()
+    api_key = result.scalars().first()
+    if api_key is None:
+        logger.warning("No API key found for user_id=%s", user_id)
+    else:
+        logger.info("Fetched API key id=%s for user_id=%s", api_key.id, user_id)
+    return api_key
 
 
 async def delete_api_key(db: AsyncSession, api_key_id: uuid.UUID) -> None:
@@ -240,6 +286,7 @@ async def delete_api_key(db: AsyncSession, api_key_id: uuid.UUID) -> None:
         delete(APIKey)
         .where(APIKey.id == api_key_id)
     )
+    logger.info("Deleted API key id=%s", api_key_id)
 
 
 async def regenerate_api_key(
@@ -266,10 +313,19 @@ async def regenerate_api_key(
     existing_key = result.scalars().first()
 
     if not existing_key:
+        logger.warning(
+            "Regenerate failed: API key id=%s not found for user_id=%s",
+            api_key_id, user_id,
+        )
         raise ValueError("API key not found or doesn't belong to user")
 
     # Store the name for the new key
     key_name = existing_key.name
+
+    logger.info(
+        "Regenerating API key id=%s name=%s user_id=%s",
+        api_key_id, key_name, user_id,
+    )
 
     # Delete the old key
     await delete_api_key(db, api_key_id)
